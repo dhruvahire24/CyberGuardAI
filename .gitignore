@@ -1,0 +1,16 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables (contains private Gemini API Keys)
+.env
+
+# Local logs and databases
+scan_history.csv
+
+# Virtual environments
+venv/
+.venv/
+env/

@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberGuard AI - Dashboard</title>
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Main Style Sheet (served from static directory) -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-shield-halved brand-icon"></i>
+                <div class="brand-text">
+                    <h2>CyberGuard <span class="accent-text">AI</span></h2>
+                    <p>Security Assistant</p>
+                </div>
+            </div>
+            
+            <nav class="sidebar-menu">
+                <a href="#dashboard" class="menu-item active" id="menu-dashboard">
+                    <i class="fa-solid fa-house"></i> Dashboard
+                </a>
+                <a href="#url-scanner" class="menu-item" id="menu-url-scanner">
+                    <i class="fa-solid fa-globe"></i> URL Scanner
+                </a>
+                <a href="#phishing-detector" class="menu-item" id="menu-phishing-detector">
+                    <i class="fa-solid fa-envelope-open-text"></i> Phishing Detector
+                </a>
+                <a href="#tips-generator" class="menu-item" id="menu-tips-generator">
+                    <i class="fa-solid fa-lightbulb"></i> Security Tips
+                </a>
+                <a href="#history" class="menu-item" id="menu-history">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Scan History
+                </a>
+            </nav>
+            
+            <div class="sidebar-status">
+                <div class="status-indicator online"></div>
+                <div class="status-details">
+                    <p class="status-title">System Status</p>
+                    <p class="status-desc" id="api-status">Connecting to Gemini...</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- Global Header -->
+            <header class="app-header">
+                <div class="header-welcome">
+                    <h1 id="page-title">Security Dashboard</h1>
+                    <p id="page-subtitle" class="text-muted">Welcome back. System is ready to secure your assets.</p>
+                </div>
+                <div class="header-actions">
+                    <div class="api-key-badge" id="key-badge">
+                        <i class="fa-solid fa-key"></i> <span id="key-badge-text">API Key Active</span>
+                    </div>
+                    <div class="pulse-ring"></div>
+                </div>
+            </header>
+
+            <!-- Dashboard Subviews -->
+            <div class="view-container">
+
+                <!-- 1. DASHBOARD VIEW -->
+                <section id="view-dashboard" class="subview active">
+                    <!-- Stats Grid -->
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-header">
+                                <span class="stat-title">Total Scans</span>
+                                <div class="stat-icon-wrapper cyan-bg"><i class="fa-solid fa-magnifying-glass"></i></div>
+                            </div>
+                            <h3 class="stat-value" id="stat-total-scans">0</h3>
+                            <p class="stat-trend"><i class="fa-solid fa-arrow-up"></i> scans checked</p>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-header">
+                                <span class="stat-title">Safe Assets</span>
+                                <div class="stat-icon-wrapper green-bg"><i class="fa-solid fa-circle-check"></i></div>
+                            </div>
+                            <h3 class="stat-value" id="stat-safe-scans">0</h3>
+                            <p class="stat-trend green-text" id="stat-safe-pct">0% of total scans</p>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-header">
+                                <span class="stat-title">Threats Flagged</span>
+                                <div class="stat-icon-wrapper red-bg"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                            </div>
+                            <h3 class="stat-value" id="stat-threats">0</h3>
+                            <p class="stat-trend red-text" id="stat-threats-label">Potential hazards isolated</p>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-header">
+                                <span class="stat-title">Average Risk Score</span>
+                                <div class="stat-icon-wrapper yellow-bg"><i class="fa-solid fa-gauge-high"></i></div>
+                            </div>
+                            <h3 class="stat-value" id="stat-avg-risk">0.0</h3>
+                            <p class="stat-trend" id="stat-risk-status">Aggregated index (1-10)</p>
+                        </div>
+                    </div>
+
+                    <!-- Visual Dashboard Center -->
+                    <div class="dashboard-center">
+                        <!-- Chart/Risk Distribution Card -->
+                        <div class="dashboard-panel chart-panel">
+                            <div class="panel-header">
+                                <h3><i class="fa-solid fa-chart-simple"></i> Threat Level Analysis</h3>
+                                <p class="text-muted text-sm">Visual distribution of threat severity scores</p>
+                            </div>
+                            <div class="chart-content">
+                                <div class="distribution-visual">
+                                    <div class="visual-indicator" id="dash-risk-gauge-container">
+                                        <!-- Custom circular SVG gauge built dynamically in JS -->
+                                        <svg viewBox="0 0 100 100" class="gauge-svg">
+                                            <circle cx="50" cy="50" r="40" class="gauge-track"></circle>
+                                            <circle cx="50" cy="50" r="40" class="gauge-fill" id="dash-gauge-fill" stroke-dasharray="251.2" stroke-dashoffset="251.2"></circle>
+                                            <text x="50" y="47" class="gauge-val" id="dash-gauge-val">0.0</text>
+                                            <text x="50" y="65" class="gauge-label" id="dash-gauge-lbl">SAFE</text>
+                                        </svg>
+                                    </div>
+                                    <div class="chart-stats">
+                                        <div class="chart-stat-item">
+                                            <span class="label"><span class="dot green-dot"></span> Low Risk (1-3)</span>
+                                            <span class="val" id="dash-low-risk-count">0</span>
+                                        </div>
+                                        <div class="chart-stat-item">
+                                            <span class="label"><span class="dot yellow-dot"></span> Medium Risk (4-7)</span>
+                                            <span class="val" id="dash-med-risk-count">0</span>
+                                        </div>
+                                        <div class="chart-stat-item">
+                                            <span class="label"><span class="dot red-dot"></span> High Risk (8-10)</span>
+                                            <span class="val" id="dash-high-risk-count">0</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quick Security Tip Card -->
+                        <div class="dashboard-panel tip-panel">
+                            <div class="panel-header">
+                                <h3><i class="fa-solid fa-lightbulb yellow-text"></i> Quick Security Brief</h3>
+                                <p class="text-muted text-sm">Gemini AI custom recommendations</p>
+                            </div>
+                            <div class="tip-content" id="dash-tip-card">
+                                <div class="tip-loading">
+                                    <i class="fa-solid fa-circle-notch fa-spin"></i> Generating tip...
+                                </div>
+                            </div>
+                            <button class="btn btn-secondary btn-sm" id="btn-refresh-tip">
+                                <i class="fa-solid fa-arrows-rotate"></i> Next Tip
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Recent Activity Section -->
+                    <div class="dashboard-panel table-panel">
+                        <div class="panel-header header-inline">
+                            <div>
+                                <h3><i class="fa-solid fa-list"></i> Recent Scans</h3>
+                                <p class="text-muted text-sm">Summary of recent scanning records</p>
+                            </div>
+                            <a href="#history" class="btn btn-secondary btn-sm" id="btn-view-all-history">View All</a>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table" id="recent-scans-table">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>Scan Type</th>
+                                        <th>Target / Input</th>
+                                        <th>Risk Score</th>
+                                        <th>Verdict</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted">No recent activities. Run a scanner to begin.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. URL SCANNER VIEW -->
+                <section id="view-url-scanner" class="subview">
+                    <div class="dashboard-panel scan-input-panel">
+                        <div class="panel-header">
+                            <h3>🌐 Scan URL Safety</h3>
+                            <p class="text-muted">Enter any link to perform heuristics analysis, typosquatting checks, and malicious indicator evaluations via Gemini AI.</p>
+                        </div>
+                        <form id="url-scan-form" class="scan-form">
+                            <div class="input-group">
+                                <i class="fa-solid fa-globe input-icon"></i>
+                                <input type="url" id="scan-url-input" placeholder="Enter URL to verify (e.g. https://www.secure-login-bank.com)" required>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa-solid fa-shield-halved"></i> Analyze URL
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Loader (hidden by default) -->
+                    <div class="loader-container hidden" id="url-loader">
+                        <div class="shield-pulse">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <p class="loader-text">CyberGuard AI is analyzing domain structures...</p>
+                        <p class="loader-subtext">Evaluating threat indices via Google Gemini</p>
+                    </div>
+
+                    <!-- Scan Results (hidden by default) -->
+                    <div class="result-container hidden" id="url-results">
+                        <div class="result-header-bar" id="url-verdict-banner">
+                            <h3 id="url-verdict-title">VERDICT: SAFE</h3>
+                        </div>
+                        <div class="result-details-grid">
+                            <!-- Gauge -->
+                            <div class="result-gauge-card">
+                                <h4>Risk Score Indicator</h4>
+                                <div class="gauge-wrapper" id="url-gauge-container">
+                                    <!-- Rendered dynamically -->
+                                </div>
+                            </div>
+                            <!-- Analysis -->
+                            <div class="result-report-card">
+                                <div class="report-section">
+                                    <h4><i class="fa-solid fa-file-invoice"></i> Analysis Summary</h4>
+                                    <p id="url-reasoning-text" class="report-body"></p>
+                                </div>
+                                <div class="report-section">
+                                    <h4><i class="fa-solid fa-list-check"></i> Defensive Recommendations</h4>
+                                    <ul id="url-recommendations-list" class="report-list"></ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. PHISHING DETECTOR VIEW -->
+                <section id="view-phishing-detector" class="subview">
+                    <div class="dashboard-panel scan-input-panel">
+                        <div class="panel-header">
+                            <h3>📧 Phishing Email Detector</h3>
+                            <p class="text-muted">Paste the header and body text of any suspicious email to assess social engineering risk levels, malicious requests, and spoofing cues.</p>
+                        </div>
+                        <form id="email-scan-form" class="scan-form">
+                            <div class="textarea-group">
+                                <textarea id="scan-email-input" rows="8" placeholder="Paste the subject line and email body here..." required></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="reset" class="btn btn-secondary">Clear Input</button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa-solid fa-envelope-shield"></i> Analyze Email
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Loader -->
+                    <div class="loader-container hidden" id="email-loader">
+                        <div class="shield-pulse">
+                            <i class="fa-solid fa-envelope"></i>
+                        </div>
+                        <p class="loader-text">CyberGuard AI is checking syntax heuristics...</p>
+                        <p class="loader-subtext">Evaluating social engineering signals via Gemini</p>
+                    </div>
+
+                    <!-- Results -->
+                    <div class="result-container hidden" id="email-results">
+                        <div class="result-header-bar" id="email-verdict-banner">
+                            <h3 id="email-verdict-title">VERDICT: PHISHING</h3>
+                        </div>
+                        <div class="result-details-grid">
+                            <!-- Gauge -->
+                            <div class="result-gauge-card">
+                                <h4>Phishing Risk Level</h4>
+                                <div class="gauge-wrapper" id="email-gauge-container">
+                                    <!-- Rendered dynamically -->
+                                </div>
+                            </div>
+                            <!-- Analysis -->
+                            <div class="result-report-card">
+                                <div class="report-section">
+                                    <h4><i class="fa-solid fa-circle-exclamation"></i> Flagged Indicators</h4>
+                                    <div id="email-indicators-badges" class="badge-container"></div>
+                                </div>
+                                <div class="report-section">
+                                    <h4><i class="fa-solid fa-file-invoice"></i> Assessment Details</h4>
+                                    <p id="email-reasoning-text" class="report-body"></p>
+                                </div>
+                                <div class="report-section">
+                                    <h4><i class="fa-solid fa-shield-virus"></i> Safety Guidelines</h4>
+                                    <ul id="email-recommendations-list" class="report-list"></ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. TIPS GENERATOR VIEW -->
+                <section id="view-tips-generator" class="subview">
+                    <div class="dashboard-panel scan-input-panel">
+                        <div class="panel-header">
+                            <h3>💡 AI Security Tips Generator</h3>
+                            <p class="text-muted">Select a topic or type custom keywords to get detailed security checklists, best practices, and emergency action steps.</p>
+                        </div>
+                        
+                        <!-- Quick Topics Selector -->
+                        <div class="quick-topics-row">
+                            <button class="topic-btn" data-topic="Password Management"><i class="fa-solid fa-key"></i> Passwords</button>
+                            <button class="topic-btn" data-topic="Multi-Factor Authentication"><i class="fa-solid fa-mobile-screen"></i> MFA Verification</button>
+                            <button class="topic-btn" data-topic="Social Engineering & Phishing"><i class="fa-solid fa-mask"></i> Social Engineering</button>
+                            <button class="topic-btn" data-topic="Public Wi-Fi Safety"><i class="fa-solid fa-wifi"></i> Public Wi-Fi</button>
+                        </div>
+
+                        <form id="tip-gen-form" class="scan-form">
+                            <div class="input-group">
+                                <i class="fa-solid fa-magnifying-glass input-icon"></i>
+                                <input type="text" id="tip-topic-input" placeholder="Type a custom security topic (e.g. Ransomware, Smart Home IoT, Backup strategies)...">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fa-solid fa-gears"></i> Generate Checklist
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Loader -->
+                    <div class="loader-container hidden" id="tip-loader">
+                        <div class="shield-pulse">
+                            <i class="fa-solid fa-lightbulb"></i>
+                        </div>
+                        <p class="loader-text">CyberGuard AI is building security standards...</p>
+                    </div>
+
+                    <!-- Results -->
+                    <div class="result-container hidden" id="tip-results">
+                        <div class="dashboard-panel tip-display-panel">
+                            <div class="tip-headline-section">
+                                <i class="fa-solid fa-circle-check checked-badge"></i>
+                                <div class="tip-title-box">
+                                    <span class="badge badge-accent" id="tip-result-topic">Topic</span>
+                                    <h2 id="tip-result-headline">Security Headline</h2>
+                                </div>
+                            </div>
+                            <div class="tip-body-section">
+                                <h4>Why This Matters</h4>
+                                <p id="tip-result-explanation" class="text-muted"></p>
+                            </div>
+                            <div class="tip-action-section">
+                                <h4><i class="fa-solid fa-circle-nodes"></i> Actionable Checklist</h4>
+                                <ul id="tip-result-actions" class="report-list"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 5. HISTORY VIEW -->
+                <section id="view-history" class="subview">
+                    <div class="dashboard-panel table-panel">
+                        <div class="panel-header header-inline">
+                            <div>
+                                <h3>Scan Logs Ledger</h3>
+                                <p class="text-muted">A full history of all scanning assessments, safety grades, and tips generated locally.</p>
+                            </div>
+                            <div class="filter-actions">
+                                <div class="search-box">
+                                    <i class="fa-solid fa-magnifying-glass"></i>
+                                    <input type="text" id="search-history-input" placeholder="Filter by input, verdict...">
+                                </div>
+                                <button class="btn btn-secondary btn-sm" id="btn-export-csv" title="Download spreadsheet log file">
+                                    <i class="fa-solid fa-file-csv"></i> Download CSV
+                                </button>
+                            </div>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table" id="history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>Scan Type</th>
+                                        <th>Target / Input</th>
+                                        <th>Risk Score</th>
+                                        <th>Verdict</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="table-footer">
+                            <p class="text-muted text-sm" id="history-count-text">Showing 0 scan entries</p>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- DETAILS VIEW MODAL (Overlay) -->
+    <div class="modal-overlay hidden" id="details-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-file-shield"></i> Detailed Scan Certificate</h3>
+                <button class="btn-close" id="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-meta-grid">
+                    <div class="meta-item">
+                        <span class="label">Date Executed</span>
+                        <span class="val" id="modal-meta-date">Date</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="label">Scan Type</span>
+                        <span class="val" id="modal-meta-type">URL</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="label">Threat Level</span>
+                        <span class="val badge" id="modal-meta-verdict">Safe</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="label">Risk Index</span>
+                        <span class="val" id="modal-meta-score">1/10</span>
+                    </div>
+                </div>
+                <div class="modal-section">
+                    <span class="label-heading">Target Input Scanned</span>
+                    <div class="scanned-input-box" id="modal-scanned-target"></div>
+                </div>
+                <div class="modal-section">
+                    <span class="label-heading">Assessments / Analysis</span>
+                    <p class="modal-body-text" id="modal-analysis-text"></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary btn-sm" id="modal-ok-btn">Acknowledge</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JS scripts (served from static directory) -->
+    <script src="/static/app.js?v=1.0.1"></script>
+</body>
+</html>
