@@ -81,3 +81,24 @@ Open your browser and navigate to:
 http://127.0.0.1:8000
 ```
 Use the sidebar navigation to switch between the Dashboard, URL Scanner, Phishing Detector, Security Tips, and History Logs.
+
+
+
+## Tech Stack
+
+- Python
+- FastAPI
+- Google Gemini AI
+- HTML
+- CSS
+- JavaScript
+
+## Author
+
+Dhruv Ahire
+
+B.Tech AI/ML Student
+Chhatrapati Shivaji Maharaj University
+
+GitHub:
+https://github.com/dhruvahire24
