@@ -17,6 +17,27 @@ CyberGuard AI is a modern, AI-powered cybersecurity dashboard and assistant buil
 - **🎨 Glassmorphism Dark Mode UI**: Vibrant layout featuring neon color highlights (Cyan, Green, Warning Gold, Hazard Red, Phishing Purple), glowing gauges, circular risk indicators, and hover transitions.
 - **🔌 Zero-Configuration Fallback**: The app loads immediately even without an API key configured. You can populate it inside `.env` or input it dynamically from the status pane while the server runs.
 
+
+## 📸 Screenshots
+
+### Homepage
+
+![Homepage](screenshots/HOMEPAGE)
+
+### Dashboard
+
+![Dashboard](screenshots/DASHBOARD)
+
+### Phishing Detection
+
+![Phishing Detection](screenshots/PHISHING)
+
+### URL Scanner
+
+![URL Scanner](screenshots/URL)
+
+
+
 ## Project Structure
 
 ```
