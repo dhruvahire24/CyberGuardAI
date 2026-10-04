@@ -1,12 +1,15 @@
 import os
 import csv
+import logging
 import sys
 from datetime import datetime
+from urllib.parse import urlsplit
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # Try importing the Google GenAI SDK
@@ -17,23 +20,178 @@ except ImportError:
     print("[Error] google-genai library is not installed. Please run 'pip install -r requirements.txt'")
     sys.exit(1)
 
-# Initialize FastAPI App
-app = FastAPI(title="CyberGuard AI API", version="1.0.0")
-
-# Enable CORS for local development
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 CSV_FILE = "scan_history.csv"
 client = None
+logger = logging.getLogger("cyberguard")
 
 # Load environment variables
 load_dotenv()
+
+
+def get_cors_origins(environment: str, configured_origins: str | None) -> list[str]:
+    if configured_origins is not None:
+        origins = []
+        for value in configured_origins.split(","):
+            origin = value.strip().rstrip("/")
+            if not origin:
+                continue
+            parsed = urlsplit(origin)
+            if (
+                origin == "*"
+                or "*" in origin
+                or parsed.scheme not in ("http", "https")
+                or not parsed.netloc
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("CYBERGUARD_CORS_ORIGINS must contain valid origins.")
+            _ = parsed.port
+            origins.append(f"{parsed.scheme}://{parsed.netloc}")
+        return list(dict.fromkeys(origins))
+
+    if environment.lower() in ("production", "prod"):
+        return []
+
+    return [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+
+class RequestSizeLimitMiddleware:
+    def __init__(self, app, max_body_size: int = 256 * 1024):
+        self.app = app
+        self.max_body_size = max_body_size
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] != "http"
+            or not scope.get("path", "").startswith("/api/")
+            or scope.get("method") not in ("POST", "PUT", "PATCH")
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        if content_length:
+            try:
+                if int(content_length) > self.max_body_size:
+                    response = JSONResponse(
+                        status_code=413,
+                        content={"detail": "Request body is too large."},
+                    )
+                    await response(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+
+        body = bytearray()
+        more_body = True
+        while more_body:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                continue
+            body.extend(message.get("body", b""))
+            if len(body) > self.max_body_size:
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body is too large."},
+                )
+                await response(scope, receive, send)
+                return
+            more_body = message.get("more_body", False)
+
+        body_sent = False
+
+        async def replay_body():
+            nonlocal body_sent
+            if body_sent:
+                return {"type": "http.disconnect"}
+            body_sent = True
+            return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+        await self.app(scope, replay_body, send)
+
+
+class SecurityHeadersMiddleware:
+    def __init__(self, app, enable_hsts: bool = False):
+        self.app = app
+        self.headers = [
+            (b"x-content-type-options", b"nosniff"),
+            (b"x-frame-options", b"DENY"),
+            (b"referrer-policy", b"strict-origin-when-cross-origin"),
+            (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+            (
+                b"content-security-policy",
+                b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+            ),
+        ]
+        if enable_hsts:
+            self.headers.append(
+                (b"strict-transport-security", b"max-age=31536000")
+            )
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        response_started = False
+
+        async def send_with_headers(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+                existing_headers = {key.lower() for key, _ in message.get("headers", [])}
+                message["headers"] = list(message.get("headers", [])) + [
+                    (key, value) for key, value in self.headers if key not in existing_headers
+                ]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_headers)
+        except Exception:
+            if response_started:
+                raise
+            logger.error("Unhandled application error")
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "An internal server error occurred."},
+            )
+            await response(scope, receive, send_with_headers)
+
+
+# Initialize FastAPI App
+app = FastAPI(title="CyberGuard AI API", version="1.0.0")
+environment = os.getenv("CYBERGUARD_ENV", "development").strip().lower()
+cors_origins = get_cors_origins(environment, os.getenv("CYBERGUARD_CORS_ORIGINS"))
+
+app.add_middleware(RequestSizeLimitMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    enable_hsts=environment in ("production", "prod"),
+)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(_request: Request, _exc: RequestValidationError):
+    return JSONResponse(status_code=422, content={"detail": "Invalid request input."})
 
 # --- Pydantic Data Schemas for API Requests/Outputs ---
 
@@ -57,13 +215,13 @@ class CybersecurityTip(BaseModel):
     action_items: list[str] = Field(description="Steps to take.")
 
 class URLScanRequest(BaseModel):
-    url: str
+    url: str = Field(max_length=2048)
 
 class EmailScanRequest(BaseModel):
-    content: str
+    content: str = Field(max_length=50000)
 
 class TipRequest(BaseModel):
-    topic: str
+    topic: str = Field(max_length=500)
 
 
 # --- Client Lazy Loading Utility ---
@@ -80,17 +238,17 @@ def get_gemini_client() -> genai.Client:
     if not api_key:
         raise HTTPException(
             status_code=400,
-            detail="GEMINI_API_KEY is not configured. Please set the API key in your .env file."
+            detail="GEMINI_API_KEY is not configured."
         )
         
     try:
         client = genai.Client(api_key=api_key)
         return client
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to initialize Gemini API Client: {str(e)}"
-        )
+            detail="Unable to initialize the AI service."
+        ) from None
 
 
 # --- CSV Logging Function ---
@@ -118,8 +276,8 @@ def log_to_csv(scan_type: str, target: str, risk_score: str, verdict: str, analy
                 verdict,
                 clean_analysis
             ])
-    except Exception as e:
-        print(f"Error logging to CSV: {e}")
+    except Exception:
+        logger.warning("Failed to write scan history.")
 
 
 # --- API Endpoint Routing ---
@@ -152,8 +310,11 @@ def api_scan_url(req: URLScanRequest):
         analysis = SafetyAnalysis.model_validate_json(response.text)
         log_to_csv("URL", url, str(analysis.risk_score), analysis.verdict, analysis.reasoning)
         return analysis
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API scan failed: {str(e)}")
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Gemini API scan failed. Please try again.",
+        ) from None
 
 
 @app.post("/api/scan/email", response_model=PhishingAnalysis)
@@ -187,8 +348,11 @@ def api_scan_email(req: EmailScanRequest):
         analysis = PhishingAnalysis.model_validate_json(response.text)
         log_to_csv("Email", content, str(analysis.risk_score), analysis.verdict, analysis.reasoning)
         return analysis
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API scan failed: {str(e)}")
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Gemini API scan failed. Please try again.",
+        ) from None
 
 
 @app.post("/api/scan/tip", response_model=CybersecurityTip)
@@ -215,8 +379,11 @@ def api_scan_tip(req: TipRequest):
         tip = CybersecurityTip.model_validate_json(response.text)
         log_to_csv("Tips", tip.topic, "N/A", "N/A", tip.headline + ": " + tip.explanation)
         return tip
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API tips failed: {str(e)}")
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Gemini API tips failed. Please try again.",
+        ) from None
 
 
 @app.get("/api/history")
@@ -244,8 +411,11 @@ def api_get_history():
                 })
         # Return newest scans first
         return logs[::-1]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to read history logs: {str(e)}")
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to read scan history.",
+        ) from None
 
 
 @app.get("/api/stats")
@@ -297,8 +467,11 @@ def api_get_stats():
             "threat_count": threats,
             "average_risk": avg_risk
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to calculate scan statistics.",
+        ) from None
 
 
 # --- Static Directory Setup & Server Catch-All ---
