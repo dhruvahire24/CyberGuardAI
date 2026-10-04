@@ -12,7 +12,7 @@ import CyberGuardAI as server
 import cyberguard.auth.router as auth_router
 import cyberguard.auth.security as auth_security
 import cyberguard.db.session as database
-from cyberguard.core.config import settings as app_settings
+from cyberguard.core.config import Settings, settings as app_settings
 from cyberguard.db.models import User
 
 
@@ -133,6 +133,25 @@ class AuthenticationTests(unittest.TestCase):
         self.assertEqual(response.json()["token_type"], "bearer")
         self.assertGreater(response.json()["expires_in"], 0)
         self.assertTrue(response.json()["access_token"])
+
+    def test_generated_development_key_supports_auth_end_to_end(self):
+        development_settings = Settings.from_env({"CYBERGUARD_ENV": "development"})
+        with patch.object(auth_security, "settings", development_settings):
+            with patch.object(auth_router, "settings", development_settings):
+                registration = self.register(
+                    username="localdev",
+                    email="localdev@example.com",
+                )
+                login = self.login(email="localdev@example.com")
+                headers = {
+                    "Authorization": "Bearer " + login.json()["access_token"]
+                }
+                profile = self.http.get("/auth/me", headers=headers)
+
+        self.assertEqual(registration.status_code, 201)
+        self.assertEqual(login.status_code, 200)
+        self.assertEqual(profile.status_code, 200)
+        self.assertEqual(profile.json()["username"], "localdev")
 
     def test_protected_endpoints_reject_requests_without_token(self):
         results = [

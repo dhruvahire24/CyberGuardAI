@@ -1,4 +1,5 @@
 import os
+import secrets
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Tuple
 from urllib.parse import urlsplit
@@ -81,11 +82,15 @@ class Settings:
             raise ValueError("Production requires a PostgreSQL DATABASE_URL.")
 
         jwt_secret_key = environ.get("JWT_SECRET_KEY") or None
-        if app_env in ("production", "prod") and (
-            jwt_secret_key is None or len(jwt_secret_key.encode("utf-8")) < 32
+        if jwt_secret_key is None:
+            if app_env in ("production", "prod"):
+                raise ValueError("Production requires a JWT_SECRET_KEY of at least 32 bytes.")
+            jwt_secret_key = secrets.token_urlsafe(48)
+        elif (
+            len(jwt_secret_key.encode("utf-8")) < 32
             or jwt_secret_key.lower().startswith(("replace_", "your_", "change_me"))
         ):
-            raise ValueError("Production requires a JWT_SECRET_KEY of at least 32 bytes.")
+            raise ValueError("JWT_SECRET_KEY must be a non-placeholder value of at least 32 bytes.")
 
         try:
             access_token_expire_minutes = int(

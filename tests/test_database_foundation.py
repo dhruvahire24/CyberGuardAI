@@ -17,8 +17,25 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.database_url, "sqlite:///./cyberguard.db")
         self.assertEqual(settings.cors_origins[0], "http://localhost:3000")
+        self.assertGreaterEqual(len(settings.jwt_secret_key.encode("utf-8")), 32)
         self.assertNotIn("GEMINI", repr(settings))
         self.assertNotIn("DATABASE_URL", repr(settings))
+
+    def test_development_generates_ephemeral_jwt_secrets(self):
+        first = Settings.from_env({"CYBERGUARD_ENV": "development"})
+        second = Settings.from_env({"CYBERGUARD_ENV": "development"})
+
+        self.assertNotEqual(first.jwt_secret_key, second.jwt_secret_key)
+        self.assertNotIn(first.jwt_secret_key, repr(first))
+
+    def test_short_configured_jwt_secret_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "JWT_SECRET_KEY"):
+            Settings.from_env(
+                {
+                    "CYBERGUARD_ENV": "development",
+                    "JWT_SECRET_KEY": "too-short",
+                }
+            )
 
     def test_production_requires_postgresql_and_https_cors_origins(self):
         with self.assertRaisesRegex(ValueError, "PostgreSQL"):
