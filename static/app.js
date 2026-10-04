@@ -6,7 +6,34 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // --- Global Application State ---
     let globalHistory = [];
+    let accessToken = null;
+    let statusInterval = null;
+    let authMode = "login";
     const API_BASE = window.location.origin;
+    const authScreen = document.getElementById("auth-screen");
+    const appShell = document.getElementById("app-shell");
+    const authMessage = document.getElementById("auth-message");
+
+    function showSignIn(message = "") {
+        accessToken = null;
+        appShell.classList.add("hidden");
+        authScreen.classList.remove("hidden");
+        authMessage.textContent = message;
+        if (statusInterval !== null) {
+            clearInterval(statusInterval);
+            statusInterval = null;
+        }
+    }
+
+    async function apiFetch(url, options = {}) {
+        const headers = new Headers(options.headers || {});
+        if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+        const response = await fetch(url, { ...options, headers });
+        if (response.status === 401 && accessToken) {
+            showSignIn("Your session has expired. Please sign in again.");
+        }
+        return response;
+    }
     
     // --- Routing and Navigation Configuration ---
     const routes = {
@@ -16,6 +43,93 @@ document.addEventListener("DOMContentLoaded", () => {
         "#tips-generator": { title: "Security Guidelines", subtitle: "Generate AI-powered checklists for password and server hygiene." },
         "#history": { title: "Scan Log Ledger", subtitle: "Audit historical checks and export records locally." }
     };
+
+    function setAuthMode(mode) {
+        authMode = mode;
+        const registering = mode === "register";
+        const usernameField = document.getElementById("auth-username-field");
+        const usernameInput = document.getElementById("auth-username");
+        const passwordInput = document.getElementById("auth-password");
+        usernameField.classList.toggle("hidden", !registering);
+        usernameInput.required = registering;
+        passwordInput.minLength = registering ? 12 : 1;
+        passwordInput.autocomplete = registering ? "new-password" : "current-password";
+        document.getElementById("auth-submit").textContent = registering ? "Create account" : "Sign in";
+        document.querySelectorAll(".auth-tab").forEach(tab => {
+            tab.classList.toggle("active", tab.getAttribute("data-auth-mode") === mode);
+        });
+        authMessage.textContent = "";
+    }
+
+    document.querySelectorAll(".auth-tab").forEach(tab => {
+        tab.addEventListener("click", () => setAuthMode(tab.getAttribute("data-auth-mode")));
+    });
+
+    document.getElementById("auth-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const email = document.getElementById("auth-email").value.trim();
+        const password = document.getElementById("auth-password").value;
+        const submitButton = document.getElementById("auth-submit");
+        const payload = { email, password };
+        if (authMode === "register") {
+            payload.username = document.getElementById("auth-username").value.trim();
+        }
+
+        submitButton.disabled = true;
+        authMessage.textContent = "";
+        try {
+            if (authMode === "register") {
+                const registration = await fetch(`${API_BASE}/auth/register`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                if (!registration.ok) {
+                    const data = await registration.json();
+                    authMessage.textContent = data.detail || "Account registration failed.";
+                    return;
+                }
+            }
+
+            const response = await fetch(`${API_BASE}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                authMessage.textContent = data.detail || "Sign in failed.";
+                return;
+            }
+
+            accessToken = data.access_token;
+            authScreen.classList.add("hidden");
+            appShell.classList.remove("hidden");
+            navigate();
+            checkSystemStatus();
+            loadDailyTip();
+            if (statusInterval === null) {
+                statusInterval = setInterval(checkSystemStatus, 30000);
+            }
+        } catch (error) {
+            authMessage.textContent = "Unable to connect to CyberGuard AI.";
+        } finally {
+            submitButton.disabled = false;
+        }
+    });
+
+    document.getElementById("btn-logout").addEventListener("click", async () => {
+        try {
+            if (accessToken) {
+                await fetch(`${API_BASE}/auth/logout`, {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${accessToken}` }
+                });
+            }
+        } finally {
+            showSignIn("You have signed out.");
+        }
+    });
 
     function navigate() {
         const hash = window.location.hash || "#dashboard";
@@ -57,8 +171,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     window.addEventListener("hashchange", navigate);
-    // Initial load
-    navigate();
 
 
     // --- Status and Connection Checker ---
@@ -68,7 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const keyBadgeText = document.getElementById("key-badge-text");
         
         try {
-            const res = await fetch(`${API_BASE}/api/stats`);
+            const res = await apiFetch(`${API_BASE}/api/stats`);
             if (res.ok) {
                 statusDesc.textContent = "Gemini Connected";
                 keyBadge.classList.remove("missing");
@@ -86,11 +198,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
     
-    // Check status immediately and repeat every 30 seconds
-    checkSystemStatus();
-    setInterval(checkSystemStatus, 30000);
-
-
     // --- Gauge Chart Visualizer ---
     function createGaugeHTML(score, verdict) {
         const circumference = 251.2;
@@ -171,7 +278,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // --- Dashboard Stats and Briefings ---
     async function loadStats() {
         try {
-            const res = await fetch(`${API_BASE}/api/stats`);
+            const res = await apiFetch(`${API_BASE}/api/stats`);
             if (!res.ok) return;
             const data = await res.json();
             
@@ -204,7 +311,7 @@ document.addEventListener("DOMContentLoaded", () => {
         briefBox.innerHTML = `<div class="tip-loading"><i class="fa-solid fa-circle-notch fa-spin"></i> Fetching AI briefing...</div>`;
         
         try {
-            const res = await fetch(`${API_BASE}/api/scan/tip`, {
+            const res = await apiFetch(`${API_BASE}/api/scan/tip`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ topic: topic })
@@ -223,9 +330,6 @@ document.addEventListener("DOMContentLoaded", () => {
             briefBox.innerHTML = `<div class="text-muted"><i class="fa-solid fa-triangle-exclamation"></i> Error loading briefs: ${err.message}</div>`;
         }
     }
-    
-    // Initial daily tip loading
-    loadDailyTip();
     
     document.getElementById("btn-refresh-tip").addEventListener("click", () => {
         const topicsList = ["passwords", "MFA", "email phishing", "public Wi-Fi", "ransomware", "social engineering"];
@@ -274,7 +378,7 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadRecentScans() {
         const tableBody = document.querySelector("#recent-scans-table tbody");
         try {
-            const res = await fetch(`${API_BASE}/api/history`);
+            const res = await apiFetch(`${API_BASE}/api/history`);
             if (!res.ok) return;
             const data = await res.json();
             globalHistory = data;
@@ -306,7 +410,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const countText = document.getElementById("history-count-text");
         
         try {
-            const res = await fetch(`${API_BASE}/api/history`);
+            const res = await apiFetch(`${API_BASE}/api/history`);
             if (!res.ok) return;
             const data = await res.json();
             globalHistory = data;
@@ -380,7 +484,7 @@ document.addEventListener("DOMContentLoaded", () => {
         urlLoader.classList.remove("hidden");
         
         try {
-            const res = await fetch(`${API_BASE}/api/scan/url`, {
+            const res = await apiFetch(`${API_BASE}/api/scan/url`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ url: urlInput })
@@ -438,7 +542,7 @@ document.addEventListener("DOMContentLoaded", () => {
         emailLoader.classList.remove("hidden");
         
         try {
-            const res = await fetch(`${API_BASE}/api/scan/email`, {
+            const res = await apiFetch(`${API_BASE}/api/scan/email`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ content: emailInput })
@@ -499,7 +603,7 @@ document.addEventListener("DOMContentLoaded", () => {
         tipLoader.classList.remove("hidden");
         
         try {
-            const res = await fetch(`${API_BASE}/api/scan/tip`, {
+            const res = await apiFetch(`${API_BASE}/api/scan/tip`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ topic: topicText })

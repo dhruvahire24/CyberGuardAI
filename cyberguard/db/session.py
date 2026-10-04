@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from cyberguard.core.config import settings
+from cyberguard.db.base import Base
 
 
 def create_database_engine(database_url: str) -> Engine:
@@ -32,6 +33,9 @@ class DatabaseInitializationError(RuntimeError):
 
 def initialize_database(database_engine: Engine = engine) -> None:
     try:
+        import cyberguard.db.models
+
+        Base.metadata.create_all(bind=database_engine)
         with database_engine.connect() as connection:
             connection.execute(text("SELECT 1"))
     except SQLAlchemyError:

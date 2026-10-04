@@ -5,11 +5,13 @@ import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from cyberguard.auth.dependencies import get_current_user
+from cyberguard.auth.router import router as auth_router
 from cyberguard.core.config import get_cors_origins, settings
 from cyberguard.db import dispose_database, initialize_database
 
@@ -150,12 +152,13 @@ app.add_middleware(
     allow_origins=list(settings.cors_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 app.add_middleware(
     SecurityHeadersMiddleware,
     enable_hsts=settings.is_production,
 )
+app.include_router(auth_router)
 
 
 @app.exception_handler(RequestValidationError)
@@ -249,7 +252,11 @@ def log_to_csv(scan_type: str, target: str, risk_score: str, verdict: str, analy
 
 # --- API Endpoint Routing ---
 
-@app.post("/api/scan/url", response_model=SafetyAnalysis)
+@app.post(
+    "/api/scan/url",
+    response_model=SafetyAnalysis,
+    dependencies=[Depends(get_current_user)],
+)
 def api_scan_url(req: URLScanRequest):
     url = req.url.strip()
     if not url:
@@ -284,7 +291,11 @@ def api_scan_url(req: URLScanRequest):
         ) from None
 
 
-@app.post("/api/scan/email", response_model=PhishingAnalysis)
+@app.post(
+    "/api/scan/email",
+    response_model=PhishingAnalysis,
+    dependencies=[Depends(get_current_user)],
+)
 def api_scan_email(req: EmailScanRequest):
     content = req.content.strip()
     if not content:
@@ -322,7 +333,11 @@ def api_scan_email(req: EmailScanRequest):
         ) from None
 
 
-@app.post("/api/scan/tip", response_model=CybersecurityTip)
+@app.post(
+    "/api/scan/tip",
+    response_model=CybersecurityTip,
+    dependencies=[Depends(get_current_user)],
+)
 def api_scan_tip(req: TipRequest):
     topic = req.topic.strip()
     gemini_client = get_gemini_client()
@@ -353,7 +368,7 @@ def api_scan_tip(req: TipRequest):
         ) from None
 
 
-@app.get("/api/history")
+@app.get("/api/history", dependencies=[Depends(get_current_user)])
 def api_get_history():
     if not os.path.exists(CSV_FILE):
         return []
@@ -385,7 +400,7 @@ def api_get_history():
         ) from None
 
 
-@app.get("/api/stats")
+@app.get("/api/stats", dependencies=[Depends(get_current_user)])
 def api_get_stats():
     if not os.path.exists(CSV_FILE):
         return {

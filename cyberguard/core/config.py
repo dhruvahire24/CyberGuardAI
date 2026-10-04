@@ -49,6 +49,8 @@ class Settings:
     app_env: str
     database_url: str = field(repr=False)
     gemini_api_key: Optional[str] = field(default=None, repr=False)
+    jwt_secret_key: Optional[str] = field(default=None, repr=False)
+    access_token_expire_minutes: int = 30
     cors_origins: Tuple[str, ...] = ()
 
     @property
@@ -78,6 +80,22 @@ class Settings:
         ):
             raise ValueError("Production requires a PostgreSQL DATABASE_URL.")
 
+        jwt_secret_key = environ.get("JWT_SECRET_KEY") or None
+        if app_env in ("production", "prod") and (
+            jwt_secret_key is None or len(jwt_secret_key.encode("utf-8")) < 32
+            or jwt_secret_key.lower().startswith(("replace_", "your_", "change_me"))
+        ):
+            raise ValueError("Production requires a JWT_SECRET_KEY of at least 32 bytes.")
+
+        try:
+            access_token_expire_minutes = int(
+                environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+            )
+        except ValueError:
+            raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must be an integer.") from None
+        if not 5 <= access_token_expire_minutes <= 1440:
+            raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must be between 5 and 1440.")
+
         cors_origins = get_cors_origins(
             app_env,
             environ.get("CYBERGUARD_CORS_ORIGINS"),
@@ -87,6 +105,8 @@ class Settings:
             app_env=app_env,
             database_url=database_url,
             gemini_api_key=environ.get("GEMINI_API_KEY") or None,
+            jwt_secret_key=jwt_secret_key,
+            access_token_expire_minutes=access_token_expire_minutes,
             cors_origins=tuple(cors_origins),
         )
 

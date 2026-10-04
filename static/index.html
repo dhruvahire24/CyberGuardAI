@@ -14,7 +14,39 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="app-container">
+    <section id="auth-screen" class="auth-screen" aria-label="Sign in">
+        <div class="auth-panel">
+            <div class="auth-brand">
+                <i class="fa-solid fa-shield-halved brand-icon"></i>
+                <div>
+                    <h1>CyberGuard <span class="accent-text">AI</span></h1>
+                    <p class="text-muted">Security Assistant</p>
+                </div>
+            </div>
+            <div class="auth-tabs" role="tablist" aria-label="Account access">
+                <button class="auth-tab active" id="auth-login-tab" type="button" data-auth-mode="login">Sign in</button>
+                <button class="auth-tab" id="auth-register-tab" type="button" data-auth-mode="register">Create account</button>
+            </div>
+            <form id="auth-form" class="auth-form">
+                <div id="auth-username-field" class="auth-field hidden">
+                    <label for="auth-username">Username</label>
+                    <input id="auth-username" name="username" type="text" minlength="3" maxlength="32" autocomplete="username">
+                </div>
+                <div class="auth-field">
+                    <label for="auth-email">Email</label>
+                    <input id="auth-email" name="email" type="email" maxlength="254" autocomplete="email" required>
+                </div>
+                <div class="auth-field">
+                    <label for="auth-password">Password</label>
+                    <input id="auth-password" name="password" type="password" maxlength="128" autocomplete="current-password" required>
+                </div>
+                <p id="auth-message" class="auth-message" role="status" aria-live="polite"></p>
+                <button id="auth-submit" type="submit" class="btn btn-primary auth-submit">Sign in</button>
+            </form>
+        </div>
+    </section>
+
+    <div id="app-shell" class="app-container hidden">
         
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
@@ -66,6 +98,9 @@
                     <div class="api-key-badge" id="key-badge">
                         <i class="fa-solid fa-key"></i> <span id="key-badge-text">API Key Active</span>
                     </div>
+                    <button class="btn btn-secondary btn-sm" id="btn-logout" type="button">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i> Sign out
+                    </button>
                     <div class="pulse-ring"></div>
                 </div>
             </header>

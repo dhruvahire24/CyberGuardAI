@@ -8,10 +8,22 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 import CyberGuardAI as server
+from cyberguard.auth.dependencies import get_current_user
 
 
 class ExistingAPIContractTests(unittest.TestCase):
     def setUp(self):
+        existing_override = server.app.dependency_overrides.get(get_current_user)
+        server.app.dependency_overrides[get_current_user] = lambda: object()
+        if existing_override is None:
+            self.addCleanup(server.app.dependency_overrides.pop, get_current_user, None)
+        else:
+            self.addCleanup(
+                server.app.dependency_overrides.__setitem__,
+                get_current_user,
+                existing_override,
+            )
+
         self.temp_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_directory.cleanup)
 

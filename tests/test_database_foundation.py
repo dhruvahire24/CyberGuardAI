@@ -24,11 +24,22 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "PostgreSQL"):
             Settings.from_env({"CYBERGUARD_ENV": "production"})
 
+        with self.assertRaisesRegex(ValueError, "JWT_SECRET_KEY"):
+            Settings.from_env(
+                {
+                    "CYBERGUARD_ENV": "production",
+                    "DATABASE_URL": "postgresql://user:secret@db.example/cyberguard",
+                    "JWT_SECRET_KEY": "replace_with_a_random_secret_at_least_32_bytes",
+                    "CYBERGUARD_CORS_ORIGINS": "https://dashboard.example",
+                }
+            )
+
         with self.assertRaisesRegex(ValueError, "valid origins"):
             Settings.from_env(
                 {
                     "CYBERGUARD_ENV": "production",
                     "DATABASE_URL": "postgresql://user:secret@db.example/cyberguard",
+                    "JWT_SECRET_KEY": "test-only-secret-value-with-at-least-32-bytes",
                     "CYBERGUARD_CORS_ORIGINS": "http://dashboard.example",
                 }
             )
@@ -38,6 +49,7 @@ class SettingsTests(unittest.TestCase):
             {
                 "CYBERGUARD_ENV": "production",
                 "DATABASE_URL": "postgresql://user:secret@db.example/cyberguard",
+                "JWT_SECRET_KEY": "test-only-secret-value-with-at-least-32-bytes",
                 "GEMINI_API_KEY": "test-gemini-key",
                 "CYBERGUARD_CORS_ORIGINS": "https://dashboard.example",
             }
@@ -56,12 +68,12 @@ class DatabaseFoundationTests(unittest.TestCase):
         with patch.object(server, "initialize_database") as initialize:
             with patch.object(server, "dispose_database") as dispose:
                 with TestClient(server.app) as http:
-                    self.assertEqual(http.get("/api/stats").status_code, 200)
+                    self.assertEqual(http.get("/").status_code, 200)
 
         initialize.assert_called_once_with()
         dispose.assert_called_once_with()
 
-    def test_sqlite_connection_initializes_without_creating_application_tables(self):
+    def test_sqlite_connection_initializes_auth_tables(self):
         with tempfile.TemporaryDirectory() as directory:
             database_file = Path(directory) / "foundation.sqlite3"
             engine = database.create_database_engine("sqlite:///{}".format(database_file))
@@ -69,7 +81,10 @@ class DatabaseFoundationTests(unittest.TestCase):
                 database.initialize_database(engine)
 
                 self.assertTrue(database_file.exists())
-                self.assertEqual(len(Base.metadata.tables), 0)
+                self.assertEqual(
+                    set(Base.metadata.tables),
+                    {"users", "user_sessions"},
+                )
             finally:
                 engine.dispose()
 
