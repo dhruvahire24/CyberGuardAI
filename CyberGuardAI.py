@@ -2,15 +2,16 @@ import os
 import csv
 import logging
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
-from urllib.parse import urlsplit
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from cyberguard.core.config import get_cors_origins, settings
+from cyberguard.db import dispose_database, initialize_database
 
 # Try importing the Google GenAI SDK
 try:
@@ -23,45 +24,6 @@ except ImportError:
 CSV_FILE = "scan_history.csv"
 client = None
 logger = logging.getLogger("cyberguard")
-
-# Load environment variables
-load_dotenv()
-
-
-def get_cors_origins(environment: str, configured_origins: str | None) -> list[str]:
-    if configured_origins is not None:
-        origins = []
-        for value in configured_origins.split(","):
-            origin = value.strip().rstrip("/")
-            if not origin:
-                continue
-            parsed = urlsplit(origin)
-            if (
-                origin == "*"
-                or "*" in origin
-                or parsed.scheme not in ("http", "https")
-                or not parsed.netloc
-                or not parsed.hostname
-                or parsed.username is not None
-                or parsed.password is not None
-                or parsed.path
-                or parsed.query
-                or parsed.fragment
-            ):
-                raise ValueError("CYBERGUARD_CORS_ORIGINS must contain valid origins.")
-            _ = parsed.port
-            origins.append(f"{parsed.scheme}://{parsed.netloc}")
-        return list(dict.fromkeys(origins))
-
-    if environment.lower() in ("production", "prod"):
-        return []
-
-    return [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
 
 
 class RequestSizeLimitMiddleware:
@@ -170,22 +132,29 @@ class SecurityHeadersMiddleware:
             await response(scope, receive, send_with_headers)
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    try:
+        initialize_database()
+        yield
+    finally:
+        dispose_database()
+
+
 # Initialize FastAPI App
-app = FastAPI(title="CyberGuard AI API", version="1.0.0")
-environment = os.getenv("CYBERGUARD_ENV", "development").strip().lower()
-cors_origins = get_cors_origins(environment, os.getenv("CYBERGUARD_CORS_ORIGINS"))
+app = FastAPI(title="CyberGuard AI API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(RequestSizeLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=list(settings.cors_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
 app.add_middleware(
     SecurityHeadersMiddleware,
-    enable_hsts=environment in ("production", "prod"),
+    enable_hsts=settings.is_production,
 )
 
 
@@ -231,9 +200,7 @@ def get_gemini_client() -> genai.Client:
     if client is not None:
         return client
         
-    # Reload dotenv in case variables were updated while the server runs
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = settings.get_gemini_api_key()
     
     if not api_key:
         raise HTTPException(

@@ -1,0 +1,88 @@
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+from fastapi.testclient import TestClient
+
+import CyberGuardAI as server
+from cyberguard.core.config import Settings
+from cyberguard.db import Base
+from cyberguard.db import session as database
+
+
+class SettingsTests(unittest.TestCase):
+    def test_development_defaults_to_local_sqlite_without_secrets(self):
+        settings = Settings.from_env({"CYBERGUARD_ENV": "development"})
+
+        self.assertEqual(settings.database_url, "sqlite:///./cyberguard.db")
+        self.assertEqual(settings.cors_origins[0], "http://localhost:3000")
+        self.assertNotIn("GEMINI", repr(settings))
+        self.assertNotIn("DATABASE_URL", repr(settings))
+
+    def test_production_requires_postgresql_and_https_cors_origins(self):
+        with self.assertRaisesRegex(ValueError, "PostgreSQL"):
+            Settings.from_env({"CYBERGUARD_ENV": "production"})
+
+        with self.assertRaisesRegex(ValueError, "valid origins"):
+            Settings.from_env(
+                {
+                    "CYBERGUARD_ENV": "production",
+                    "DATABASE_URL": "postgresql://user:secret@db.example/cyberguard",
+                    "CYBERGUARD_CORS_ORIGINS": "http://dashboard.example",
+                }
+            )
+
+    def test_production_normalizes_postgresql_url_and_hides_credentials(self):
+        settings = Settings.from_env(
+            {
+                "CYBERGUARD_ENV": "production",
+                "DATABASE_URL": "postgresql://user:secret@db.example/cyberguard",
+                "GEMINI_API_KEY": "test-gemini-key",
+                "CYBERGUARD_CORS_ORIGINS": "https://dashboard.example",
+            }
+        )
+
+        self.assertEqual(
+            settings.database_url,
+            "postgresql+psycopg://user:secret@db.example/cyberguard",
+        )
+        self.assertNotIn("secret", repr(settings))
+        self.assertNotIn("test-gemini-key", repr(settings))
+
+
+class DatabaseFoundationTests(unittest.TestCase):
+    def test_app_lifespan_initializes_and_disposes_database(self):
+        with patch.object(server, "initialize_database") as initialize:
+            with patch.object(server, "dispose_database") as dispose:
+                with TestClient(server.app) as http:
+                    self.assertEqual(http.get("/api/stats").status_code, 200)
+
+        initialize.assert_called_once_with()
+        dispose.assert_called_once_with()
+
+    def test_sqlite_connection_initializes_without_creating_application_tables(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database_file = Path(directory) / "foundation.sqlite3"
+            engine = database.create_database_engine("sqlite:///{}".format(database_file))
+            try:
+                database.initialize_database(engine)
+
+                self.assertTrue(database_file.exists())
+                self.assertEqual(len(Base.metadata.tables), 0)
+            finally:
+                engine.dispose()
+
+    def test_session_dependency_closes_session(self):
+        session = Mock()
+        with patch.object(database, "SessionLocal", return_value=session):
+            dependency = database.get_db()
+            self.assertIs(next(dependency), session)
+            with self.assertRaises(StopIteration):
+                next(dependency)
+
+        session.close.assert_called_once_with()
+
+
+if __name__ == "__main__":
+    unittest.main()
